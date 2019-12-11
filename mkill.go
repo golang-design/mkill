@@ -15,7 +15,7 @@ var (
 	pid       = os.Getpid()
 	maxThread = int32(runtime.NumCPU())
 	interval  = time.Second
-	debug     = true
+	debug     = false
 )
 
 func checkwork() {
@@ -57,7 +57,7 @@ func init() {
 	}()
 }
 
-// GOMAXTHREADS change the limites of the maximum threads in runtime
+// GOMAXTHREADS change the limits of the maximum threads in runtime
 // and returns the previous number of threads limit
 func GOMAXTHREADS(n int) int {
 	return int(atomic.SwapInt32(&maxThread, int32(n)))
