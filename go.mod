@@ -1,3 +1,3 @@
-module github.com/changkun/mkill
+module golang.design/x/mkill
 
 go 1.13
