@@ -19,10 +19,11 @@ import (
 )
 
 var (
-	pid       = os.Getpid()
-	maxThread = int32(runtime.NumCPU()) + 2 // 2 meaning runtime sysmon thread + template thread
-	interval  = time.Second
-	debug     = false
+	pid        = os.Getpid()
+	minThreads = int32(runtime.NumCPU()) + 2 // minimum number of threads required by the runtime
+	maxThreads = int32(runtime.NumCPU()) + 2 // 2 meaning runtime sysmon thread + template thread
+	interval   = time.Second
+	debug      = false
 )
 
 // NumM returns the number of running threads.
@@ -41,14 +42,15 @@ func NumM() int {
 }
 
 // GOMAXTHREADS sets the maximum number of system threads that allowed in a Go program
-// and returns the previous setting. If n < 1, it does not change the current setting.
-// The default allowed number of threads of a program is runtime.NumCPU() + 2.
+// and returns the previous setting. If n is lower than minimum required number of threads,
+// it does not change the current setting.
+// The minimum allowed number of threads of a program is runtime.NumCPU() + 2.
 func GOMAXTHREADS(n int) int {
-	if n < 1 {
-		return int(atomic.LoadInt32(&maxThread))
+	if n < int(minThreads) {
+		return int(atomic.LoadInt32(&maxThreads))
 	}
 
-	return int(atomic.SwapInt32(&maxThread, int32(n)))
+	return int(atomic.SwapInt32(&maxThreads, int32(n)))
 }
 
 // Wait waits until the number of threads meet the GOMAXTHREADS settings.
@@ -82,7 +84,7 @@ func checkwork() {
 func init() {
 	checkwork()
 	if debug {
-		fmt.Printf("mkill: pid %v, maxThread %v, interval %v\n", pid, maxThread, interval)
+		fmt.Printf("mkill: pid %v, maxThread %v, interval %v\n", pid, maxThreads, interval)
 	}
 
 	wg := sync.WaitGroup{}
@@ -92,10 +94,10 @@ func init() {
 			select {
 			case <-t.C:
 				n := NumM()
-				nkill := int32(n) - atomic.LoadInt32(&maxThread)
+				nkill := int32(n) - atomic.LoadInt32(&maxThreads)
 				if nkill <= 0 {
 					if debug {
-						fmt.Printf("mkill: checked #threads total %v / max %v\n", n, maxThread)
+						fmt.Printf("mkill: checked #threads total %v / max %v\n", n, maxThreads)
 					}
 					continue
 				}
