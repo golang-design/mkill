@@ -6,6 +6,7 @@
 
 package mkill
 
-import "fmt"
-
-var cmdThreads = fmt.Sprintf("ps hH p %d | wc -l", pid)
+// psFlags lists the threads of a process. "H" prints one line per thread and
+// "p" selects the pid; the output is preceded by a single column header line.
+// See parseNumM.
+var psFlags = []string{"H", "p"}

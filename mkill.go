@@ -30,16 +30,41 @@ var (
 	threadCount = NumM
 )
 
-// NumM returns the number of running threads.
+// psArgs returns the arguments passed to ps to list this process' threads.
+func psArgs() []string {
+	args := make([]string, 0, len(psFlags)+1)
+	args = append(args, psFlags...)
+	return append(args, strconv.Itoa(pid))
+}
+
+// runPS lists the process' threads via ps. It is a package variable so tests
+// can stub the subprocess out.
+var runPS = func() ([]byte, error) {
+	return exec.Command("ps", psArgs()...).Output()
+}
+
+// NumM returns the number of running threads. It returns 0 if the count cannot
+// be determined.
 func NumM() int {
-	out, err := exec.Command("bash", "-c", cmdThreads).Output()
-	if err != nil && debug {
-		fmt.Printf("mkill: failed to fetch #threads: %v\n", err)
+	return parseNumM(runPS())
+}
+
+// parseNumM turns the output of ps into a thread count. ps prints one column
+// header line followed by one line per thread, so the count is the number of
+// lines after the header.
+func parseNumM(out []byte, err error) int {
+	if err != nil {
+		if debug {
+			fmt.Printf("mkill: failed to fetch #threads: %v\n", err)
+		}
 		return 0
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil && debug {
-		fmt.Printf("mkill: failed to parse #threads: %v\n", err)
+	trimmed := strings.TrimSpace(string(out))
+	if trimmed == "" {
+		return 0
+	}
+	n := len(strings.Split(trimmed, "\n")) - 1 // drop the header line
+	if n < 0 {
 		return 0
 	}
 	return n
@@ -76,8 +101,7 @@ func Wait(ctx context.Context) (ok bool) {
 }
 
 func checkwork() {
-	_, err := exec.Command("bash", "-c", cmdThreads).Output()
-	if err != nil {
+	if _, err := runPS(); err != nil {
 		panic(fmt.Sprintf("mkill: failed to use the package: %v", err))
 	}
 }
