@@ -100,44 +100,54 @@ func Wait(ctx context.Context) (ok bool) {
 	}
 }
 
-func checkwork() {
-	if _, err := runPS(); err != nil {
-		panic(fmt.Sprintf("mkill: failed to use the package: %v", err))
-	}
+// enabled reports whether the environment supports counting threads. When it
+// does not (for example ps is missing from PATH), the package degrades to a
+// no-op rather than crashing the program that merely imported it.
+func enabled() bool {
+	_, err := runPS()
+	return err == nil
 }
 
 func init() {
-	checkwork()
 	if debug {
 		fmt.Printf("mkill: pid %v, maxThread %v, interval %v\n", pid, maxThreads, interval)
 	}
-
-	wg := sync.WaitGroup{}
-	go func() {
-		t := time.NewTicker(interval)
-		for {
-			select {
-			case <-t.C:
-				n := threadCount()
-				nkill := int32(n) - atomic.LoadInt32(&maxThreads)
-				if nkill <= 0 {
-					if debug {
-						fmt.Printf("mkill: checked #threads total %v / max %v\n", n, maxThreads)
-					}
-					continue
-				}
-				wg.Add(int(nkill))
-				for i := int32(0); i < nkill; i++ {
-					go func() {
-						runtime.LockOSThread()
-						wg.Done()
-					}()
-				}
-				wg.Wait()
-				if debug {
-					fmt.Printf("mkill: killing #threads, remaining: %v\n", n)
-				}
-			}
+	if !enabled() {
+		if debug {
+			fmt.Println("mkill: disabled, cannot count threads")
 		}
-	}()
+		return
+	}
+	go reap()
+}
+
+// reap periodically counts the threads and, whenever there are more than the
+// configured maximum, retires the surplus by spawning goroutines that lock an
+// OS thread and then exit: the runtime terminates the thread of a locked
+// goroutine that returns without unlocking.
+func reap() {
+	var wg sync.WaitGroup
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for range t.C {
+		n := threadCount()
+		nkill := int32(n) - atomic.LoadInt32(&maxThreads)
+		if nkill <= 0 {
+			if debug {
+				fmt.Printf("mkill: checked #threads total %v / max %v\n", n, maxThreads)
+			}
+			continue
+		}
+		wg.Add(int(nkill))
+		for i := int32(0); i < nkill; i++ {
+			go func() {
+				runtime.LockOSThread()
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+		if debug {
+			fmt.Printf("mkill: killing #threads, remaining: %v\n", n)
+		}
+	}
 }
