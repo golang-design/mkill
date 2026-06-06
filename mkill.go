@@ -24,6 +24,10 @@ var (
 	maxThreads = int32(runtime.NumCPU()) + 2 // 2 meaning runtime sysmon thread + template thread
 	interval   = time.Second
 	debug      = false
+
+	// threadCount reports the current number of OS threads. It is a package
+	// variable so tests can replace it with a deterministic stub.
+	threadCount = NumM
 )
 
 // NumM returns the number of running threads.
@@ -57,19 +61,16 @@ func GOMAXTHREADS(n int) int {
 // The function always returns true if the ctx is not canceled.
 // Otherwise returns true only if the Wait is successed in the last check.
 func Wait(ctx context.Context) (ok bool) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
 	for {
+		if threadCount() <= GOMAXTHREADS(0) {
+			return true
+		}
 		select {
 		case <-ctx.Done():
-			if NumM() <= GOMAXTHREADS(0) {
-				ok = true
-			}
-			return
-		default:
-			if NumM() > GOMAXTHREADS(0) {
-				continue
-			}
-			ok = true
-			return
+			return threadCount() <= GOMAXTHREADS(0)
+		case <-t.C:
 		}
 	}
 }
@@ -93,7 +94,7 @@ func init() {
 		for {
 			select {
 			case <-t.C:
-				n := NumM()
+				n := threadCount()
 				nkill := int32(n) - atomic.LoadInt32(&maxThreads)
 				if nkill <= 0 {
 					if debug {
